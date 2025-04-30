@@ -490,6 +490,7 @@ default_config = {
                 # Number of days back to include when calculating the project pipeline summary.
                 "list_pipelines_time_period_in_days": 7,
             },
+            "resource_deletion_batch_size": 10000,
         },
         # The API needs to know what is its k8s svc url so it could enrich it in the jobs it creates
         "api_url": "",

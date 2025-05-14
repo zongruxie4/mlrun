@@ -4444,8 +4444,8 @@ statsmodels==0.14.4 \
     --hash=sha256:e332c2d9b806083d1797231280602340c5c913f90d4caa0213a6a54679ce9331 \
     --hash=sha256:f5f537f7d000de4a1708c63400755152b862cd4926bb81a86568e347c19c364b
     # via evidently
-storey==1.9.0 \
-    --hash=sha256:29027aefb6b1e016e6e1adb8b8209c8c1622c1c6fe19dfa35ed3eb51e60045cc
+storey==1.10.0 \
+    --hash=sha256:6e701a6f0944315623032066676d2c9615afc011e3839011c88eca69a30ea347
     # via -r requirements.txt
 strip-hints==0.1.13 ; python_full_version < '3.11' \
     --hash=sha256:1feaebde61269ba0dea1e7f093df7ff9d4df4980cce7e3c22ed6d86ae43dbd06 \

@@ -1800,6 +1800,8 @@ class MlrunProject(ModelObj):
         training_set=None,
         label_column=None,
         extra_data=None,
+        model_url: Optional[str] = None,
+        default_config=None,
         **kwargs,
     ) -> ModelArtifact:
         """Log a model artifact and optionally upload it to datastore
@@ -1842,7 +1844,9 @@ class MlrunProject(ModelObj):
         :param label_column:    which columns in the training set are the label (target) columns
         :param extra_data:      key/value list of extra files/charts to link with this dataset
                                 value can be absolute path | relative path (to model dir) | bytes | artifact object
-
+        :param model_url:       Remote model url.
+        :param default_config:  Default configuration for client building
+                                Saved as a sub-dictionary under the parameter.
         :returns: model artifact object
         """
 
@@ -1865,6 +1869,8 @@ class MlrunProject(ModelObj):
             feature_vector=feature_vector,
             feature_weights=feature_weights,
             extra_data=extra_data,
+            model_url=model_url,
+            default_config=default_config,
             **kwargs,
         )
         if training_set is not None:

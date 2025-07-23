@@ -35,7 +35,7 @@ from storey import ParallelExecutionMechanisms
 import mlrun
 import mlrun.artifacts
 import mlrun.common.schemas as schemas
-from mlrun.artifacts.llm_prompt import LLMPromptArtifact
+from mlrun.artifacts.llm_prompt import LLMPromptArtifact, PlaceholderDefaultDict
 from mlrun.artifacts.model import ModelArtifact
 from mlrun.datastore.datastore_profile import (
     DatastoreProfileKafkaSource,
@@ -45,7 +45,7 @@ from mlrun.datastore.datastore_profile import (
 )
 from mlrun.datastore.model_provider.model_provider import ModelProvider
 from mlrun.datastore.storeytargets import KafkaStoreyTarget, StreamStoreyTarget
-from mlrun.utils import logger
+from mlrun.utils import get_data_from_path, logger, split_path
 
 from ..config import config
 from ..datastore import get_stream_pusher
@@ -1205,8 +1205,11 @@ class Model(storey.ParallelExecutionRunnable, ModelObj):
 
 
 class LLModel(Model):
-    def __init__(self, name: str, **kwargs):
+    def __init__(
+        self, name: str, input_path: Optional[Union[str, list[str]]], **kwargs
+    ):
         super().__init__(name, **kwargs)
+        self._input_path = split_path(input_path)
 
     def predict(
         self,
@@ -1278,12 +1281,34 @@ class LLModel(Model):
             return None, None
         prompt_legend = llm_prompt_artifact.spec.prompt_legend
         prompt_template = deepcopy(llm_prompt_artifact.read_prompt())
-        kwargs = {
-            place_holder: body.get(body_map["field"])
-            for place_holder, body_map in prompt_legend.items()
-        }
-        for d in prompt_template:
-            d["content"] = d["content"].format(**kwargs)
+        input_data = copy(get_data_from_path(self._input_path, body))
+        if isinstance(input_data, dict):
+            kwargs = (
+                {
+                    place_holder: input_data.get(body_map["field"])
+                    for place_holder, body_map in prompt_legend.items()
+                }
+                if prompt_legend
+                else {}
+            )
+            input_data.update(kwargs)
+            default_place_holders = PlaceholderDefaultDict(lambda: None, input_data)
+            for message in prompt_template:
+                try:
+                    message["content"] = message["content"].format(**input_data)
+                except KeyError as e:
+                    logger.warning(
+                        "Input data was missing a placeholder, placeholder stay unformatted",
+                        key_error=e,
+                    )
+                    message["content"] = message["content"].format_map(
+                        default_place_holders
+                    )
+        else:
+            logger.warning(
+                f"Expected input data to be a dict, but received input data from type {type(input_data)} prompt "
+                f"template stay unformatted",
+            )
         return prompt_template, llm_prompt_artifact.spec.model_configuration
 
 
@@ -1719,15 +1744,6 @@ class ModelRunnerStep(MonitoredStep):
             )
         return output_schema
 
-    @staticmethod
-    def _split_path(path: str) -> Union[str, list[str], None]:
-        if path is not None:
-            parsed_path = path.split(".")
-            if len(parsed_path) == 1:
-                parsed_path = parsed_path[0]
-            return parsed_path
-        return path
-
     def _calculate_monitoring_data(self) -> dict[str, dict[str, str]]:
         monitoring_data = deepcopy(
             self.class_args.get(
@@ -1752,15 +1768,11 @@ class ModelRunnerStep(MonitoredStep):
                 ][model][schemas.MonitoringData.OUTPUTS] = monitoring_data[model][
                     schemas.MonitoringData.OUTPUTS
                 ]
-                monitoring_data[model][schemas.MonitoringData.INPUT_PATH] = (
-                    self._split_path(
-                        monitoring_data[model][schemas.MonitoringData.INPUT_PATH]
-                    )
+                monitoring_data[model][schemas.MonitoringData.INPUT_PATH] = split_path(
+                    monitoring_data[model][schemas.MonitoringData.INPUT_PATH]
                 )
-                monitoring_data[model][schemas.MonitoringData.RESULT_PATH] = (
-                    self._split_path(
-                        monitoring_data[model][schemas.MonitoringData.RESULT_PATH]
-                    )
+                monitoring_data[model][schemas.MonitoringData.RESULT_PATH] = split_path(
+                    monitoring_data[model][schemas.MonitoringData.RESULT_PATH]
                 )
             return monitoring_data
 
@@ -1778,6 +1790,13 @@ class ModelRunnerStep(MonitoredStep):
             model_selector = get_class(model_selector, namespace)()
         model_objects = []
         for model, model_params in models.values():
+            model_params[schemas.MonitoringData.INPUT_PATH] = (
+                self.class_args.get(
+                    mlrun.common.schemas.ModelRunnerStepData.MONITORING_DATA, {}
+                )
+                .get(model_params.get("name"), {})
+                .get(schemas.MonitoringData.INPUT_PATH)
+            )
             model = get_class(model, namespace).from_dict(
                 model_params, init_with_params=True
             )

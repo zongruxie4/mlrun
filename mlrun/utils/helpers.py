@@ -2437,3 +2437,27 @@ def is_valid_port(port: int, raise_on_error: bool = False) -> bool:
     if raise_on_error:
         raise ValueError("Port must be in the range 0–65535")
     return False
+
+
+def set_data_by_path(
+    path: typing.Union[str, list[str], None], data: dict, value
+) -> None:
+    if path is None:
+        if not isinstance(value, dict):
+            raise ValueError("When path is None, value must be a dictionary.")
+        data.update(value)
+
+    elif isinstance(path, str):
+        data[path] = value
+
+    elif isinstance(path, list):
+        current = data
+        for key in path[:-1]:
+            if key not in current or not isinstance(current[key], dict):
+                current[key] = {}
+            current = current[key]
+        current[path[-1]] = value
+    else:
+        raise mlrun.errors.MLRunInvalidArgumentError(
+            "Expected path to be of type str or list of str"
+        )

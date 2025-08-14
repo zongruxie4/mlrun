@@ -1210,6 +1210,55 @@ class Model(storey.ParallelExecutionRunnable, ModelObj):
 
 
 class LLModel(Model):
+    """
+    A model wrapper for handling LLM (Large Language Model) prompt-based inference.
+
+    This class extends the base `Model` to provide specialized handling for
+    `LLMPromptArtifact` objects, enabling both synchronous and asynchronous
+    invocation of language models.
+
+    **Model Invocation**:
+
+    - The execution of enriched prompts is delegated to the `model_provider`
+      configured for the model (e.g., **Hugging Face** or **OpenAI**).
+    - The `model_provider` is responsible for sending the prompt to the correct
+      backend API and returning the generated output.
+    - Users can override the `predict` and `predict_async` methods to customize
+      the behavior of the model invocation.
+
+    **Prompt Enrichment Overview**:
+
+    - If an `LLMPromptArtifact` is found, load its prompt template and fill in
+      placeholders using values from the request body.
+    - If the artifact is not an `LLMPromptArtifact`, skip formatting and attempt
+      to retrieve `messages` directly from the request body using the input path.
+
+    **Simplified Example**:
+
+    Input body::
+
+        {"city": "Paris", "days": 3}
+
+    Prompt template in artifact::
+
+        [
+            {"role": "system", "content": "You are a travel planning assistant."},
+            {"role": "user", "content": "Create a {{days}}-day itinerary for {{city}}."},
+        ]
+
+    Result after enrichment::
+
+        [
+            {"role": "system", "content": "You are a travel planning assistant."},
+            {"role": "user", "content": "Create a 3-day itinerary for Paris."},
+        ]
+
+    :param name: Name of the model.
+    :param input_path: Path in the request body where input data is located.
+    :param result_path: Path in the response body where model outputs and the statistics
+                        will be stored.
+    """
+
     def __init__(
         self,
         name: str,
@@ -1348,7 +1397,7 @@ class LLModel(Model):
             llm_prompt_artifact = (
                 self.invocation_artifact or self._get_artifact_object()
             )
-        if not (
+        if not llm_prompt_artifact or not (
             llm_prompt_artifact and isinstance(llm_prompt_artifact, LLMPromptArtifact)
         ):
             logger.warning(
@@ -1357,11 +1406,13 @@ class LLModel(Model):
                 artifact_type=type(llm_prompt_artifact).__name__,
                 llm_prompt_artifact=llm_prompt_artifact,
             )
-            return None, None
-        prompt_legend = llm_prompt_artifact.spec.prompt_legend
-        prompt_template = deepcopy(llm_prompt_artifact.read_prompt())
+            prompt_legend, prompt_template, model_configuration = {}, [], {}
+        else:
+            prompt_legend = llm_prompt_artifact.spec.prompt_legend
+            prompt_template = deepcopy(llm_prompt_artifact.read_prompt())
+            model_configuration = llm_prompt_artifact.spec.model_configuration
         input_data = copy(get_data_from_path(self._input_path, body))
-        if isinstance(input_data, dict):
+        if isinstance(input_data, dict) and prompt_template:
             kwargs = (
                 {
                     place_holder: input_data.get(body_map["field"])
@@ -1385,13 +1436,17 @@ class LLModel(Model):
                     message["content"] = message["content"].format_map(
                         default_place_holders
                     )
+        elif isinstance(input_data, dict) and not prompt_template:
+            # If there is no prompt template, we assume the input data is already in the correct format.
+            logger.debug("Attempting to retrieve messages from the request body.")
+            prompt_template = input_data.get("messages", [])
         else:
             logger.warning(
                 "Expected input data to be a dict, prompt template stays unformatted",
                 model_name=self.name,
                 input_data_type=type(input_data).__name__,
             )
-        return prompt_template, llm_prompt_artifact.spec.model_configuration
+        return prompt_template, model_configuration
 
 
 class ModelSelector(ModelObj):

@@ -59,7 +59,7 @@ class TestHuggingFaceModelRunner(TestMLRunSystem):
 
     @pytest.mark.parametrize(
         "execution_mechanism",
-        ["thread_pool"],
+        ["naive", "process_pool", "dedicated_process", "thread_pool"],
     )
     def test_basic_huggingface_model_runner(self, execution_mechanism):
         self.setup_datastore_profile()
@@ -72,8 +72,8 @@ class TestHuggingFaceModelRunner(TestMLRunSystem):
             requirements=[
                 "--extra-index-url",
                 "https://download.pytorch.org/whl/cpu",
-                "torch==2.7.1+cpu",
-                "transformers==4.53.2",
+                "torch==2.8.0+cpu",
+                "transformers==4.56.2",
                 "pillow~=11.3",
             ],
             default_config={"max_new_tokens": 50},
@@ -84,7 +84,7 @@ class TestHuggingFaceModelRunner(TestMLRunSystem):
         # The default Nuclio resource configuration is:
         # {"requests": {"cpu": "25m", "memory": "1Mi"}, "limits": {"cpu": "2", "memory": "20Gi"}}
         function.spec.resources = {
-            "limits": {"cpu": "7", "memory": "20Gi"},
+            "limits": {"cpu": "6", "memory": "20Gi"},
             "requests": {"cpu": "25m", "memory": "1Mi"},
         }
         function.spec.max_replicas = (
@@ -143,8 +143,8 @@ class TestHuggingFaceModelRunner(TestMLRunSystem):
             requirements=[
                 "--extra-index-url",
                 "https://download.pytorch.org/whl/cpu",
-                "torch==2.7.1+cpu",
-                "transformers==4.53.2",
+                "torch==2.8.0+cpu",
+                "transformers==4.56.2",
                 "pillow~=11.3",
             ],
             default_config={"top_k": 2},

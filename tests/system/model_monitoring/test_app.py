@@ -63,6 +63,7 @@ from mlrun.model_monitoring.applications import (
 )
 from mlrun.model_monitoring.applications.evidently import (
     SUPPORTED_EVIDENTLY_VERSION,
+    SUPPORTED_SNIFFIO_VERSION,
 )
 from mlrun.utils.logger import Logger
 from mlrun.utils.v3io_clients import get_v3io_client
@@ -704,7 +705,7 @@ class TestMonitoringAppFlow(TestMLRunSystemModelMonitoring, _V3IORecordsChecker)
                         rel_path="assets/custom_evidently_app.py",
                         requirements=[
                             f"evidently=={SUPPORTED_EVIDENTLY_VERSION}",
-                            "sniffio>={SUPPORTED_SNIFFIO_VERSION}",  # Due to litestar bug (ML-11640)
+                            f"sniffio>={SUPPORTED_SNIFFIO_VERSION}",  # Due to litestar bug (ML-11640)
                         ],
                         kwargs={
                             "evidently_workspace_path": (

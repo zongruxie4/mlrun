@@ -2599,7 +2599,7 @@ class FlowStep(BaseStep):
         self._wait_for_result = False
         self._source = None
         self._start_steps = []
-        self._allow_cyclic = allow_cyclic
+        self.allow_cyclic = allow_cyclic
 
     def get_children(self):
         return self._steps.values()
@@ -3168,10 +3168,16 @@ class RootFlowStep(FlowStep):
         engine=None,
         final_step=None,
         allow_cyclic: bool = False,
-        max_iterations: Optional[int] = 10_000,
+        max_iterations: Optional[int] = None,
     ):
         super().__init__(
-            name, steps, after, engine, final_step, allow_cyclic, max_iterations
+            name,
+            steps,
+            after,
+            engine,
+            final_step,
+            allow_cyclic,
+            max_iterations or 100 if allow_cyclic else None,
         )
         self._models = set()
         self._route_models = set()
@@ -3196,7 +3202,14 @@ class RootFlowStep(FlowStep):
 
     @allow_cyclic.setter
     def allow_cyclic(self, allow_cyclic: bool):
-        self._allow_cyclic = allow_cyclic
+        if allow_cyclic and self.engine == "async":
+            self._allow_cyclic = allow_cyclic
+        elif allow_cyclic and self.engine == "sync":
+            raise mlrun.errors.MLRunInvalidArgumentError(
+                "Cyclic graphs are not supported with sync engine, please use async engine"
+            )
+        else:
+            self._allow_cyclic = allow_cyclic
 
     def add_shared_model(
         self,

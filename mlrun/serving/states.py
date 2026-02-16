@@ -1830,7 +1830,12 @@ class ModelRunner(storey.ParallelExecution):
 
     def select_runnables(self, event):
         models = cast(list[Model], self.runnables)
-        return self.model_runner_selector.select_models(event, models)
+        selected = self.model_runner_selector.select_models(event, models)
+        if selected is not None and hasattr(event, "_metadata"):
+            event._metadata["selected_models"] = [
+                model if isinstance(model, str) else model.name for model in selected
+            ]
+        return selected
 
     def select_outlets(self, event) -> Optional[Collection[str]]:
         is_batched = False
@@ -2558,6 +2563,8 @@ class ModelRunnerErrorRaiser(storey.MapClass):
             else:
                 if storey.flow.is_batched_event(event):
                     # TODO fix error raiser for batch, ML-12068
+                    return event
+                if not isinstance(event.body, dict):
                     return event
                 for model in event.body:
                     body_by_model = event.body.get(model)

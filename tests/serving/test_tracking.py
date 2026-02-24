@@ -2167,6 +2167,14 @@ class SimpleTestModel(Model):
         return {"result": "ok"}
 
 
+class FailingStreamingModel(Model):
+    """A streaming model that raises an error after yielding some chunks."""
+
+    def predict(self, body, **kwargs):
+        yield "chunk_0"
+        raise RuntimeError("stream failure mid-generation")
+
+
 class TestMonitoringPreProcessorStreamingAggregation:
     """Tests for MonitoringPreProcessor streaming chunk aggregation."""
 
@@ -2375,6 +2383,121 @@ class TestMonitoringPreProcessorStreamingAggregation:
             assert "single_result" in str(monitoring_event["resp"]["outputs"])
         finally:
             server.wait_for_completion()
+
+    def test_do_aggregates_string_chunks_with_result_path(self, rundb_mock):
+        """Test that stream-collected string chunks work even when result_path is set.
+
+        LLModel through MRS always has result_path='output'. In streaming mode the
+        aggregated body is a plain string (not a dict), so result_path must be
+        ignored during output extraction.
+        """
+        function = mlrun.new_function("test-stream-str-rp", kind="serving")
+        graph = function.set_topology("flow", engine="async")
+        model_runner_step = ModelRunnerStep(name="my_runner")
+        model_runner_step.add_model(
+            model_class="SimpleTestModel",
+            execution_mechanism="naive",
+            endpoint_name="my_model",
+            result_path="output",
+        )
+        graph.to(model_runner_step).respond()
+        function.set_tracking()
+        server = function.to_mock_server()
+
+        try:
+            event = storey.Event(
+                body=["hello ", "world "],
+            )
+            event._metadata = {
+                "model_runner_name": "my_runner",
+                "when": "2026-01-01 00:00:00.000000+00:00",
+                "microsec": 1000,
+                "inputs": {"question": "test"},
+            }
+            event.stream_collected = True
+
+            preprocessor = server.graph.steps["monitoring_pre_processor_step"]._object
+            result = preprocessor.do(event)
+
+            assert isinstance(result.body, list)
+            assert len(result.body) == 1
+            monitoring_event = result.body[0]
+            assert "hello world " in str(monitoring_event["resp"]["outputs"])
+        finally:
+            server.wait_for_completion()
+
+    def test_streaming_success_produces_single_output(self, rundb_mock):
+        """Verify that a stream-collected scalar body produces a single-element
+        outputs list without crashing on result_path extraction."""
+        function = mlrun.new_function("test-stream-cols", kind="serving")
+        graph = function.set_topology("flow", engine="async")
+        model_runner_step = ModelRunnerStep(name="my_runner")
+        model_runner_step.add_model(
+            model_class="SimpleTestModel",
+            execution_mechanism="naive",
+            endpoint_name="my_model",
+            result_path="output",
+            outputs=["answer", "usage"],
+        )
+        graph.to(model_runner_step).respond()
+        function.set_tracking()
+        server = function.to_mock_server()
+
+        try:
+            preprocessor = server.graph.steps["monitoring_pre_processor_step"]._object
+
+            stream_event = storey.Event(
+                body=["Par", "is"],
+            )
+            stream_event._metadata = {
+                "model_runner_name": "my_runner",
+                "when": "2026-01-01 00:00:01.000000+00:00",
+                "microsec": None,
+                "inputs": {"question": "What is the capital of France?"},
+            }
+            stream_event.stream_collected = True
+            stream_mon = preprocessor.do(stream_event).body[0]
+
+            assert stream_mon["resp"]["outputs"] == ["Paris"]
+        finally:
+            server.wait_for_completion()
+
+    def test_streaming_error_reaches_monitoring_stream(self, rundb_mock):
+        """Verify that an error in a streaming model reaches the monitoring stream.
+
+        When a streaming generator raises mid-stream, the Collector should emit
+        an event with body={"error": "..."} which MonitoringPreProcessor records
+        to the monitoring stream, matching non-streaming error tracking behavior.
+        """
+        function = mlrun.new_function("test-stream-err-track", kind="serving")
+        graph = function.set_topology("flow", engine="async")
+        model_runner_step = ModelRunnerStep(name="my_runner")
+        model_runner_step.add_model(
+            model_class="FailingStreamingModel",
+            execution_mechanism="naive",
+            endpoint_name="my_model",
+        )
+        graph.to(model_runner_step).respond()
+
+        function.set_streaming(enabled=True)
+        function.set_tracking("dummy://")
+        server = function.to_mock_server()
+
+        try:
+            server.test("/", {"n": 1})
+        finally:
+            server.wait_for_completion()
+
+        dummy_stream = server.context.stream.output_stream
+        assert (
+            len(dummy_stream.event_list) == 1
+        ), "expected one tracking event for the streaming error"
+        event = dummy_stream.event_list[0]
+        assert (
+            event.get("error") is not None
+        ), "expected 'error' field in tracking event"
+        assert "RuntimeError" in event["error"]
+        assert "stream failure mid-generation" in event["error"]
 
 
 def test_collector_step_added_to_monitoring_graph(rundb_mock):

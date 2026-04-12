@@ -687,6 +687,13 @@ class HTTPRunDB(RunDBInterface):
 
                 config.auth_with_oauth_token.enabled = True
 
+            default_runtime_image_by_kind = (
+                server_cfg.get("default_runtime_image_by_kind") or {}
+            )
+            for kind, image_value in default_runtime_image_by_kind.items():
+                if hasattr(config.function_defaults.image_by_kind, kind):
+                    setattr(config.function_defaults.image_by_kind, kind, image_value)
+
         except Exception as exc:
             logger.warning(
                 "Failed syncing config from server",

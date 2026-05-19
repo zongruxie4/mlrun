@@ -2544,6 +2544,7 @@ class MlrunProject(ModelObj):
         requirements: list[str] | None = None,
         requirements_file: str = "",
         local_path: str | None = None,
+        otlp_enabled: bool | None = None,
         **application_kwargs,
     ) -> mlrun.runtimes.RemoteRuntime:
         """
@@ -2576,7 +2577,9 @@ class MlrunProject(ModelObj):
                                         monitoring application's constructor.
         :param local_path:              Path to a local directory to save the downloaded monitoring-app code files in,
                                         in case 'func' is a hub URL (defaults to current working directory).
-        :returns:                       The model monitoring remote function object.
+        :param otlp_enabled:            Export this function's MM results/metrics as OTel. ``None`` (default) inherits
+                                        ``project.spec.model_monitoring.otlp_enabled``; ``True``/``False`` pins the
+                                        function.
         """
         (
             resolved_function_name,
@@ -2593,6 +2596,7 @@ class MlrunProject(ModelObj):
             requirements,
             requirements_file,
             local_path,
+            otlp_enabled=otlp_enabled,
             **application_kwargs,
         )
         # save to project spec
@@ -2615,6 +2619,7 @@ class MlrunProject(ModelObj):
         tag: str | None = None,
         requirements: typing.Union[str, list[str]] | None = None,
         requirements_file: str = "",
+        otlp_enabled: bool | None = None,
         **application_kwargs,
     ) -> mlrun.runtimes.RemoteRuntime:
         """
@@ -2641,6 +2646,10 @@ class MlrunProject(ModelObj):
         :param application_class:       Name or an Instance of a class that implementing the monitoring application.
         :param application_kwargs:      Additional keyword arguments to be passed to the
                                         monitoring application's constructor.
+        :param otlp_enabled:            See :py:func:`~set_model_monitoring_function` for full semantics.
+                                        ``None`` (default) inherits from
+                                        ``project.spec.model_monitoring.otlp_enabled``; explicit ``True`` / ``False``
+                                        pins the function.
         :returns:                       The model monitoring remote function object.
         """
 
@@ -2654,6 +2663,7 @@ class MlrunProject(ModelObj):
             tag,
             requirements,
             requirements_file,
+            otlp_enabled=otlp_enabled,
             **application_kwargs,
         )
         return function_object
@@ -2674,9 +2684,22 @@ class MlrunProject(ModelObj):
         requirements: typing.Union[list[str], None] = None,
         requirements_file: str = "",
         local_path: str | None = None,
+        otlp_enabled: bool | None = None,
         **application_kwargs,
     ) -> tuple[str, mlrun.runtimes.RemoteRuntime, dict]:
         import mlrun.model_monitoring.api
+
+        project_otlp_enabled = bool(self.spec.model_monitoring.otlp_enabled)
+        if otlp_enabled is True and not project_otlp_enabled:
+            raise mlrun.errors.MLRunInvalidArgumentError(
+                "Cannot enable OTel on a model-monitoring function while the "
+                "project hasn't opted into OTel. Call "
+                "`project.enable_model_monitoring(otlp_enabled=True)` first, "
+                "or omit `otlp_enabled` on this function to inherit the "
+                "project setting."
+            )
+        if otlp_enabled is None:
+            otlp_enabled = project_otlp_enabled
 
         kind = None
         if (isinstance(func, str) or func is None) and application_class is not None:
@@ -2691,6 +2714,7 @@ class MlrunProject(ModelObj):
                 requirements=requirements,
                 requirements_file=requirements_file,
                 local_path=local_path,
+                otlp_enabled=otlp_enabled,
                 **application_kwargs,
             )
         elif isinstance(func, str) and isinstance(handler, str):

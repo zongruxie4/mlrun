@@ -73,6 +73,7 @@ def extra_requirements() -> dict[str, list[str]]:
         ],
         "alibaba-oss": ["ossfs==2025.5.0", "oss2==2.18.4"],
         "timescaledb": ["psycopg[binary,pool]~=3.2"],
+        "opentelemetry": ["storey[otel]"],
         "snowflake": ["snowflake-connector-python~=4.4,<4.5"],
     }
 

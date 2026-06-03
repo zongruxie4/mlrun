@@ -168,6 +168,7 @@ def new_project(
     overwrite: bool = False,
     parameters: dict | None = None,
     default_function_node_selector: dict | None = None,
+    run_setup: bool = True,
 ) -> "MlrunProject":
     """Create a new MLRun project, optionally load it from a yaml/zip/git template.
     The project will become the active project for the current session.
@@ -236,6 +237,7 @@ def new_project(
                          if project with name exists
     :param parameters:   key/value pairs to add to the project.spec.params
     :param default_function_node_selector: defines the default node selector for scheduling functions within the project
+    :param run_setup:    whether the setup script should be run (default True)
 
     :returns: project object
     """
@@ -321,7 +323,8 @@ def new_project(
         )
 
     # Hook for initializing the project using a project_setup script
-    project = project.setup(save and mlrun.mlconf.dbpath)
+    if run_setup:
+        project = project.setup(save and mlrun.mlconf.dbpath)
 
     return project
 
@@ -339,6 +342,7 @@ def load_project(
     sync_functions: bool = False,
     parameters: dict | None = None,
     allow_cross_project: bool | None = None,
+    run_setup: bool = True,
 ) -> "MlrunProject":
     """Load an MLRun project from git or tar or dir. The project will become the active project for
     the current session.
@@ -388,6 +392,7 @@ def load_project(
     :param parameters:      key/value pairs to add to the project.spec.params
     :param allow_cross_project: if True, override the loaded project name. This flag ensures awareness of
                                 loading an existing project yaml as a baseline for a new project with a different name
+    :param run_setup:       whether the setup script should be run (default True)
 
     :returns: project object
     """
@@ -473,7 +478,8 @@ def load_project(
         project.save()
 
     # Hook for initializing the project using a project_setup script
-    project = project.setup(to_save)
+    if run_setup:
+        project = project.setup(to_save)
 
     if to_save:
         project.register_artifacts()
@@ -499,6 +505,7 @@ def get_or_create_project(
     save: bool = True,
     parameters: dict | None = None,
     allow_cross_project: bool | None = None,
+    run_setup: bool = True,
 ) -> "MlrunProject":
     """Load a project from MLRun DB, or create/import if it does not exist.
     The project will become the active project for the current session.
@@ -546,6 +553,7 @@ def get_or_create_project(
     :param parameters:   key/value pairs to add to the project.spec.params
     :param allow_cross_project: if True, override the loaded project name. This flag ensures awareness of
                                 loading an existing project yaml as a baseline for a new project with a different name
+    :param run_setup:    whether the setup script should be run (default True)
 
     :returns: project object
     """
@@ -566,6 +574,7 @@ def get_or_create_project(
             save=False,
             parameters=parameters,
             allow_cross_project=allow_cross_project,
+            run_setup=run_setup,
         )
         logger.info("Project loaded successfully", project_name=project.name)
         return project
@@ -601,6 +610,7 @@ def get_or_create_project(
             save=save,
             parameters=parameters,
             allow_cross_project=allow_cross_project,
+            run_setup=run_setup,
         )
 
         logger.info(
@@ -622,6 +632,7 @@ def get_or_create_project(
         subpath=subpath,
         save=save,
         parameters=parameters,
+        run_setup=run_setup,
     )
     logger.info(
         "Project created successfully", project_name=project.name, stored_in_db=save
@@ -1464,6 +1475,7 @@ class MlrunProject(ModelObj):
         schedule: typing.Union[str, mlrun.common.schemas.ScheduleCronTrigger] = None,
         ttl: int | None = None,
         image: str | None = None,
+        run_setup: bool = False,
         **args,
     ):
         """Add or update a workflow, specify a name and the code path
@@ -1502,6 +1514,9 @@ class MlrunProject(ModelObj):
                               The image must have mlrun[kfp] installed which requires python 3.9.
                               Therefore, the project default image will not be used for the workflow,
                               and the image must be specified explicitly.
+        :param run_setup:     Whether the project setup script should be run on the remote workflow runner pod.
+                              Only relevant for remote/scheduled workflows; the runner loads the project from
+                              the DB (the source of truth), so setup is skipped by default (default False).
         :param args:          Argument values (key=value, ..)
         """
 
@@ -1562,6 +1577,8 @@ class MlrunProject(ModelObj):
             workflow["ttl"] = ttl
         if image:
             workflow["image"] = image
+        if run_setup:
+            workflow["run_setup"] = run_setup
         self.spec.set_workflow(name, workflow)
 
     def set_artifact(
@@ -3883,6 +3900,7 @@ class MlrunProject(ModelObj):
         cleanup_ttl: int | None = None,
         notifications: list[mlrun.model.Notification] | None = None,
         workflow_runner_node_selector: dict[str, str] | None = None,
+        run_setup: bool | None = None,
         context: mlrun.execution.MLClientCtx | None = None,
     ) -> _PipelineRunStatus:
         """Run a workflow using kubeflow pipelines
@@ -3926,6 +3944,10 @@ class MlrunProject(ModelObj):
                           This allows you to control and specify where the workflow runner pod will be scheduled.
                           This setting is only relevant when the engine is set to 'remote' or for scheduled workflows,
                           and it will be ignored if the workflow is not run on a remote engine.
+        :param run_setup:           Whether the project setup script should be run on the remote workflow runner pod.
+                          Only relevant for remote/scheduled workflows; the runner loads the project from the DB
+                          (the source of truth), so setup is skipped by default. When not specified, the value set
+                          via `set_workflow(..., run_setup=...)` is used (default False).
         :param context:             mlrun context.
         :returns: ~py:class:`~mlrun.projects.pipelines._PipelineRunStatus` instance
         """
@@ -3966,6 +3988,8 @@ class MlrunProject(ModelObj):
             workflow_spec.merge_args(arguments)
         workflow_spec.cleanup_ttl = cleanup_ttl or workflow_spec.cleanup_ttl
         workflow_spec.run_local = local
+        if run_setup is not None:
+            workflow_spec.run_setup = run_setup
 
         name = f"{self.metadata.name}-{name}" if name else self.metadata.name
         artifact_path = artifact_path or self._enrich_artifact_path_with_workflow_uid()

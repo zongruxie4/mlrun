@@ -4308,8 +4308,10 @@ class HTTPRunDB(RunDBInterface):
 
         :param project: The name of the project.
         :return: HTTP URL of the model monitoring stream pod, or None if no HTTP trigger is configured.
+            A non-ready stream pod still returns its URL — the URL may not be reachable until
+            the pod becomes ready.
         :raises mlrun.errors.MLRunNotFoundError: if the stream function is not deployed.
-        :raises mlrun.errors.MLRunPreconditionFailedError: if the stream function is not in ready state.
+        :raises mlrun.errors.MLRunPreconditionFailedError: if the stream function is in terminal error state.
         """
         resp = self.api_call(
             method=mlrun.common.types.HTTPMethod.GET,

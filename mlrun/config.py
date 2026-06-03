@@ -132,6 +132,11 @@ default_config = {
             # k8s resource by default the interval will be - (monitoring.runs.interval * 2 ), if set will override the
             # default
             "missing_runtime_resources_debouncing_interval": None,
+            # Grace period (seconds) for which monitoring defers marking a run "completed" after its
+            # runtime resource reports completion while the run still has no results - used by
+            # self-reporting runtimes (e.g. mpijob) to avoid completing before results are committed;
+            # past the grace the run completes regardless.
+            "result_settle_grace_seconds": 90,
             # max number of parallel abort run jobs in runs monitoring
             "concurrent_abort_stale_runs_workers": 10,
             "list_runs_time_period_in_days": 7,  # days
